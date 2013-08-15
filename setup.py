@@ -13,7 +13,7 @@ except IOError:
 setup(
   name='splicer.discodb',
 
-  version='0.0.1',
+  version='0.0.2',
   description='the world is a database',
   long_description=README,
   author='Scott Robertson',

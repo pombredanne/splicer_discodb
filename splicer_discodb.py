@@ -1,6 +1,8 @@
 import json
 
 from splicer import Schema
+from splicer.ast import LoadOp, SelectionOp
+
 from discodb import DiscoDB
 
 
@@ -11,7 +13,7 @@ _load_value = json.loads
 
 def create(path, schema, records):
   if isinstance(schema, dict):
-    schema = Schema(schema['fields'])
+    schema = Schema(**schema)
 
   return DiscoDB(index(schema, records))
 
@@ -25,16 +27,17 @@ def index(schema, records):
   for doc_id, record in enumerate(records):
     doc_id = _key(doc_id+1)
     yield doc_id, _value(record)
-    for field in schema:
+    for field in schema.fields:
       value = record[field.name]
       yield "{}:{}".format(field.name, value), doc_id
-      yield field, "{}:{}".format(field, value)
+      yield field.name, "{}:{}".format(field.name, value)
 
 
   yield '__count__', doc_id
 
 
 class DiscoDBServer(object):
+  capabilities = [SelectionOp]
 
   def __init__(self, **tables):
     # {'name': DiscoDB}
@@ -49,24 +52,35 @@ class DiscoDBServer(object):
   def has(self, table_name):
     return table_name in self._tables
 
+
   @property
   def relations(self):
-    return self._tables.items()
+    return [
+      (name, relation.schema)
+      for name, relation in self._tables.items()
+    ]
+
 
   def get_relation(self, name):
     return self._tables.get(name)
 
-  def evaluate(self, query):
-    relation = self._tables[query.relation_name]
-    return DiscoTable(relation)
+  def evaluate(self, operation):
+    if isinstance(operation, LoadOp):
+      relation_name = operation.name
+    elif isinstance(operation, SelectionOp):
+      relation_name = operation.relation.name
+      # todo build discodb query
+
+    return self._tables[relation_name]
+
 
 class DiscoTable(object):
   def __init__(self, server, name, db, range=None):
     self.server = server
-    self.name = name
-    schema = _load_value(list(db['__schema__'])[0])
-    self.schema        = Schema(schema['fields'])
-    self.db = db
+    self.name   = name
+    schema      = _load_value(list(db['__schema__'])[0])
+    self.schema = Schema(**schema)
+    self.db     = db
 
     self.record_count  = _load_value(list(db['__count__'])[0])
     if range:
